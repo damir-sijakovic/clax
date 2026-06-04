@@ -1,0 +1,83 @@
+// Button.cx — clickable button rendered with legacy OpenGL (no shaders).
+//
+// State (hover/pressed) is driven by the main event loop in main.cx via
+// setHovered / setPressed; onClick bumps an internal counter. Drawing uses
+// immediate-mode GL so the example needs no shader plumbing.
+#include <GLFW/glfw3.h>
+#include <stdbool.h>
+#include <stdio.h>
+
+class Button {
+    int  x, y, w, h;
+    int  clicks;
+    bool pressed;
+    bool hovered;
+
+    Button(int x, int y, int w, int h) {
+        this::x = x; this::y = y; this::w = w; this::h = h;
+        this::clicks  = 0;
+        this::pressed = false;
+        this::hovered = false;
+    }
+
+    ~Button() { }
+
+    bool contains(double mx, double my) {
+        return mx >= this::x
+            && my >= this::y
+            && mx <  this::x + this::w
+            && my <  this::y + this::h;
+    }
+
+    void setHovered(bool h) { this::hovered = h; }
+    void setPressed(bool p) { this::pressed = p; }
+
+    void onClick() {
+        this::clicks += 1;
+        printf("button clicked! total = %d\n", this::clicks);
+    }
+
+    int getClicks() { return this::clicks; }
+
+    void drawQuad(int qx, int qy, int qw, int qh) {
+        glBegin(GL_QUADS);
+        glVertex2i(qx,      qy);
+        glVertex2i(qx + qw, qy);
+        glVertex2i(qx + qw, qy + qh);
+        glVertex2i(qx,      qy + qh);
+        glEnd();
+    }
+
+    void draw() {
+        float r, g, b;
+        if (this::pressed)      { r = 0.24f; g = 0.43f; b = 0.78f; }
+        else if (this::hovered) { r = 0.39f; g = 0.67f; b = 0.94f; }
+        else                    { r = 0.27f; g = 0.35f; b = 0.43f; }
+
+        // Filled rect.
+        glColor3f(r, g, b);
+        this::drawQuad(this::x, this::y, this::w, this::h);
+
+        // Border.
+        glColor3f(0.9f, 0.9f, 0.9f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2i(this::x,             this::y);
+        glVertex2i(this::x + this::w,   this::y);
+        glVertex2i(this::x + this::w,   this::y + this::h);
+        glVertex2i(this::x,             this::y + this::h);
+        glEnd();
+
+        // Click-count indicator: row of small squares (capped at 12).
+        int n = this::clicks;
+        if (n > 12) n = 12;
+        int sq = 10;
+        int gap = 4;
+        int total = n * sq + (n - 1) * gap;
+        int sx = this::x + (this::w - total) / 2;
+        int sy = this::y + (this::h - sq) / 2;
+        glColor3f(0.94f, 0.94f, 0.94f);
+        for (int i = 0; i < n; i++) {
+            this::drawQuad(sx + i * (sq + gap), sy, sq, sq);
+        }
+    }
+};

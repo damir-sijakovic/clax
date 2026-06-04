@@ -1,0 +1,144 @@
+// String.cx — owned, growable C-string wrapper.
+//
+// Tracks spare capacity so repeated append is amortised O(1) rather than
+// reallocating to the exact length every time. `cstr()` returns a borrowed,
+// NUL-terminated buffer valid until the next mutation. String is text-only
+// (length is strlen-based); it does not store embedded NUL bytes.
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <DynamicArrayString.cx>
+
+class String {
+    char* data;
+    int   length;     // strlen, excluding the NUL
+    int   capacity;   // allocated bytes, including room for the NUL
+
+    String(char* initial) {
+        this::length = strlen(initial);
+        this::capacity = this::length + 1;
+        this::data = malloc(this::capacity);
+        memcpy(this::data, initial, this::length + 1);
+    }
+
+    ~String() {
+        free(this::data);
+    }
+
+    int size() {
+        return this::length;
+    }
+
+    bool isEmpty() {
+        return this::length == 0;
+    }
+
+    // Borrowed, NUL-terminated buffer (do NOT free). Invalid after a mutation.
+    char* cstr() {
+        return this::data;
+    }
+
+    // The char at `index`, or '\0' if out of range.
+    char charAt(int index) {
+        if (index < 0 || index >= this::length) return '\0';
+        return this::data[index];
+    }
+
+    // Ensure room for `extra` more chars plus the NUL. Internal helper.
+    void ensure(int extra) {
+        int need = this::length + extra + 1;
+        if (need <= this::capacity) return;
+        int nc = this::capacity * 2;
+        if (nc < need) nc = need;
+        this::data = realloc(this::data, nc);
+        this::capacity = nc;
+    }
+
+    void append(char* extra) {
+        int n = strlen(extra);
+        this::ensure(n);
+        memcpy(this::data + this::length, extra, n + 1);
+        this::length += n;
+    }
+
+    void appendChar(char c) {
+        this::ensure(1);
+        this::data[this::length] = c;
+        this::length += 1;
+        this::data[this::length] = '\0';
+    }
+
+    // Reset to the empty string. Keeps the allocated buffer.
+    void clear() {
+        this::length = 0;
+        this::data[0] = '\0';
+    }
+
+    bool equals(char* other) {
+        return strcmp(this::data, other) == 0;
+    }
+
+    // Index of the first occurrence of `needle`, or -1.
+    int indexOf(char* needle) {
+        char* p = strstr(this::data, needle);
+        if (p == NULL) return -1;
+        return (int)(p - this::data);
+    }
+
+    bool contains(char* needle) {
+        return this::indexOf(needle) >= 0;
+    }
+
+    bool startsWith(char* prefix) {
+        int n = strlen(prefix);
+        if (n > this::length) return false;
+        return strncmp(this::data, prefix, n) == 0;
+    }
+
+    bool endsWith(char* suffix) {
+        int n = strlen(suffix);
+        if (n > this::length) return false;
+        return strcmp(this::data + this::length - n, suffix) == 0;
+    }
+
+    // New String holding the [start, start+len) slice. Bounds are clamped.
+    // Caller owns the result (delete it).
+    String substring(int start, int len) {
+        if (start < 0) start = 0;
+        if (start > this::length) start = this::length;
+        if (len < 0) len = 0;
+        if (start + len > this::length) len = this::length - start;
+        char* tmp = malloc(len + 1);
+        memcpy(tmp, this::data + start, len);
+        tmp[len] = '\0';
+        String s = new String(tmp);
+        free(tmp);
+        return s;
+    }
+
+    // New copy of this String. Caller owns the result (delete it).
+    String copy() {
+        String s = new String(this::data);
+        return s;
+    }
+
+    // Split on `delim` into a new array the caller owns (delete it). A run of
+    // text between delimiters becomes one element; adjacent delimiters and a
+    // trailing delimiter produce empty elements.
+    DynamicArrayString split(char delim) {
+        DynamicArrayString out = new DynamicArrayString(4);
+        int start = 0;
+        for (int i = 0; i <= this::length; i++) {
+            if (i == this::length || this::data[i] == delim) {
+                int len = i - start;
+                char* piece = malloc(len + 1);
+                memcpy(piece, this::data + start, len);
+                piece[len] = '\0';
+                out::push(piece);   // push copies the string
+                free(piece);
+                start = i + 1;
+            }
+        }
+        return out;
+    }
+};

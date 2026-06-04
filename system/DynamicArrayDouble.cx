@@ -1,0 +1,59 @@
+// DynamicArrayDouble.cx — growable array of doubles.
+//
+// A plain value container (mirrors DynamicArray, the int version): push
+// appends, get/set index by position, raw() exposes the contiguous buffer so
+// it can be handed straight to C/graphics APIs (vertex data, coordinate runs).
+#include <stdlib.h>
+
+class DynamicArrayDouble {
+    double* data;
+    int     size;
+    int     capacity;
+
+    DynamicArrayDouble(int initialCapacity) {
+        this::capacity = initialCapacity;
+        this::size = 0;
+        this::data = malloc(sizeof(double) * initialCapacity);
+    }
+
+    ~DynamicArrayDouble() {
+        free(this::data);
+    }
+
+    void push(double value) {
+        if (this::size == this::capacity) {
+            int nc = this::capacity * 2;
+            if (nc < 1) nc = 1;
+            this::capacity = nc;
+            this::data = realloc(this::data, sizeof(double) * this::capacity);
+        }
+        this::data[this::size] = value;
+        this::size += 1;
+    }
+
+    // Value at `index`, or 0.0 if out of range.
+    double get(int index) {
+        if (index < 0 || index >= this::size) return 0.0;
+        return this::data[index];
+    }
+
+    // Overwrite the value at `index` (no-op if out of range).
+    void set(int index, double value) {
+        if (index < 0 || index >= this::size) return;
+        this::data[index] = value;
+    }
+
+    // Reset to empty. Keeps the allocated buffer.
+    void clear() {
+        this::size = 0;
+    }
+
+    // Borrowed pointer to the contiguous buffer (do NOT free). Valid until the
+    // next push. Handy for passing to C APIs that take a double*.
+    double* raw() {
+        return this::data;
+    }
+
+    int getSize()     { return this::size; }
+    int getCapacity() { return this::capacity; }
+};

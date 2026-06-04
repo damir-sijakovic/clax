@@ -1,0 +1,161 @@
+// HashTableObject.cx — string-keyed -> Object value hash table.
+//
+// The table owns both keys (copied strings) and values (Object references).
+// Replacing a value or removing an entry deletes the previous Object via the
+// runtime-dispatched `delete`. `take` transfers ownership of a value back to
+// the caller.
+//
+// Open addressing with linear probing; auto-resizes at ~0.7 load factor.
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <DynamicArrayString.cx>
+
+class HashTableObject {
+    char** keys;
+    void** values;
+    int    capacity;
+    int    size;
+
+    HashTableObject(int initialCapacity) {
+        this::capacity = initialCapacity;
+        this::size = 0;
+        this::keys   = calloc(initialCapacity, sizeof(char*));
+        this::values = calloc(initialCapacity, sizeof(void*));
+    }
+
+    ~HashTableObject() {
+        for (int i = 0; i < this::capacity; i++) {
+            free(this::keys[i]);
+            delete this::values[i];  // safe on NULL slots
+        }
+        free(this::keys);
+        free(this::values);
+    }
+
+    char* dup(char* s) {
+        int n = strlen(s);
+        char* p = malloc(n + 1);
+        memcpy(p, s, n + 1);
+        return p;
+    }
+
+    // FNV-1a 32-bit, folded to capacity.
+    int hashOf(char* key) {
+        unsigned int h = 2166136261u;
+        for (int i = 0; key[i] != '\0'; i++) {
+            h ^= (unsigned char)key[i];
+            h *= 16777619u;
+        }
+        return (int)(h % (unsigned int)this::capacity);
+    }
+
+    int probe(char* key) {
+        int start = this::hashOf(key);
+        for (int i = 0; i < this::capacity; i++) {
+            int s = (start + i) % this::capacity;
+            if (this::keys[s] == NULL) return s;
+            if (strcmp(this::keys[s], key) == 0) return s;
+        }
+        return -1;
+    }
+
+    // Double the table and reinsert every entry. Key strings and Object values
+    // are moved, not re-copied/re-cloned.
+    void grow() {
+        int    oldCap  = this::capacity;
+        char** oldKeys = this::keys;
+        void** oldVals = this::values;
+        int newCap = oldCap * 2;
+        if (newCap < 4) newCap = 4;
+        this::capacity = newCap;
+        this::size = 0;
+        this::keys   = calloc(newCap, sizeof(char*));
+        this::values = calloc(newCap, sizeof(void*));
+        for (int i = 0; i < oldCap; i++) {
+            if (oldKeys[i] != NULL) {
+                int s = this::probe(oldKeys[i]);
+                this::keys[s]   = oldKeys[i];
+                this::values[s] = oldVals[i];
+                this::size += 1;
+            }
+        }
+        free(oldKeys);
+        free(oldVals);
+    }
+
+    // Take ownership of `value`. Caller must NOT delete `value`.
+    // Existing value for `key`, if any, is deleted.
+    void put(char* key, Object value) {
+        if ((this::size + 1) * 10 >= this::capacity * 7) {
+            this::grow();
+        }
+        int s = this::probe(key);
+        if (s < 0) return;
+        if (this::keys[s] == NULL) {
+            this::keys[s] = this::dup(key);
+            this::size += 1;
+        } else {
+            delete this::values[s];
+        }
+        this::values[s] = value;
+    }
+
+    bool contains(char* key) {
+        int s = this::probe(key);
+        if (s < 0) return false;
+        return this::keys[s] != NULL;
+    }
+
+    // Borrowed reference (do NOT delete). NULL if absent.
+    Object get(char* key) {
+        int s = this::probe(key);
+        if (s < 0 || this::keys[s] == NULL) return NULL;
+        return this::values[s];
+    }
+
+    // Remove the entry and transfer ownership of the value back to the caller.
+    // Returns NULL if the key was absent.
+    Object take(char* key) {
+        int s = this::probe(key);
+        if (s < 0 || this::keys[s] == NULL) return NULL;
+        Object v = this::values[s];
+        free(this::keys[s]);   this::keys[s] = NULL;
+        this::values[s] = NULL;
+        this::size -= 1;
+        // Reinsert any contiguous run that follows so probes still find them.
+        int i = (s + 1) % this::capacity;
+        while (this::keys[i] != NULL) {
+            char* k    = this::keys[i];
+            void* vv   = this::values[i];
+            this::keys[i]   = NULL;
+            this::values[i] = NULL;
+            this::size -= 1;
+            int t = this::probe(k);
+            this::keys[t]   = k;
+            this::values[t] = vv;
+            this::size += 1;
+            i = (i + 1) % this::capacity;
+        }
+        return v;
+    }
+
+    // Remove and delete the entry's value.
+    void remove(char* key) {
+        Object v = this::take(key);
+        delete v;
+    }
+
+    // All keys, in unspecified order, as a new array the caller owns (delete).
+    // Iterate values with get(key).
+    DynamicArrayString getKeys() {
+        DynamicArrayString out = new DynamicArrayString(this::size + 1);
+        for (int i = 0; i < this::capacity; i++) {
+            if (this::keys[i] != NULL) out::push(this::keys[i]);
+        }
+        return out;
+    }
+
+    int getSize()     { return this::size; }
+    int getCapacity() { return this::capacity; }
+};

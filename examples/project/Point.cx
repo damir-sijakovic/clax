@@ -1,0 +1,21 @@
+// Point.cx — small value-like class used to demonstrate V2 features:
+//   methods that take/return objects, typeof, clone, Object handling.
+
+class Point {
+    int x, y;
+
+    Point(int x, int y) {
+        this::x = x;
+        this::y = y;
+    }
+
+    ~Point() { }
+
+    void add(Point other) {
+        this::x += other::x;
+        this::y += other::y;
+    }
+
+    int getX() { return this::x; }
+    int getY() { return this::y; }
+};

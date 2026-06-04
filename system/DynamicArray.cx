@@ -1,0 +1,35 @@
+// DynamicArray.cx — ported from the v1 .ccls example.
+#include <stdlib.h>
+
+class DynamicArray {
+    int* data;
+    int  size;
+    int  capacity;
+
+    DynamicArray(int initialCapacity) {
+        this::capacity = initialCapacity;
+        this::size = 0;
+        this::data = malloc(sizeof(int) * initialCapacity);
+    }
+
+    ~DynamicArray() {
+        free(this::data);
+    }
+
+    void push(int value) {
+        if (this::size == this::capacity) {
+            this::capacity *= 2;
+            this::data = realloc(this::data, sizeof(int) * this::capacity);
+        }
+        this::data[this::size] = value;
+        this::size += 1;
+    }
+
+    int get(int index) {
+        return this::data[index];
+    }
+
+    int getSize() {
+        return this::size;
+    }
+};

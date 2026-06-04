@@ -1,0 +1,114 @@
+.\" Manpage for clax — the Clax V2 transpiler.
+.TH CLAX 1 "2026-06-04" "clax 2.4" "User Commands"
+.SH NAME
+clax \- transpile Clax (.cx) sources to C
+.SH SYNOPSIS
+.B clax
+.RI [ options ]
+.I project-dir
+.br
+.B clax_lint
+.RI [ options ]
+.I project-dir
+.SH DESCRIPTION
+.B clax
+scans
+.I project-dir
+for
+.B .cx
+files and transpiles them to C, written to
+.IR project-dir /generated_c .
+Each class file (one
+.RB \[dq] "class Name { ... };" \[dq]
+block whose file name matches the class) yields
+.IR Name .h
+and
+.IR Name .c ;
+program files (plain C, possibly containing
+.BR main )
+yield a matching
+.IR .c .
+A shared
+.B clax_runtime.h
+and
+.B clax_runtime.c
+implementing the object model (\fB::\fR, \fBnew\fR/\fBdelete\fR, \fBthis\fR,
+\fBObject\fR, \fBtypeof\fR, \fBclone\fR, NULL safety) are emitted alongside.
+.PP
+The single per-project hand-written header
+.B project.hx
+is copied to
+.B generated_c/project.h
+and included by the runtime, so every translation unit sees its contents.
+.SH OPTIONS
+.TP
+.BI \-\-include= DIR
+Add
+.I DIR
+to the search path for
+.RB \[dq] "#include <X.cx>" \[dq]
+and
+.RB \[dq] "#include \\(dqX.cx\\(dq" \[dq]
+references. May be given more than once. The installed standard library lives
+in
+.IR DATADIR /clax/system .
+.TP
+.B \-\-lint
+Parse and type-check only; write no files. Equivalent to invoking the binary as
+.BR clax_lint .
+.TP
+.B \-\-init-project
+Scaffold a new project tree (\fIproject-dir\fR\fB/project/main.cx\fR,
+\fBproject.hx\fR and a \fBbuild.sh\fR wired to the installed system library)
+instead of transpiling.
+.TP
+.B \-\-init-sdl2-project
+Like
+.BR \-\-init-project ,
+but scaffolds a small SDL2 program: a
+.B main.cx
+event loop plus a clickable
+.B Button.cx
+class, and a
+.B build.sh
+that links SDL2 via
+.BR pkg-config .
+Requires the SDL2 development package.
+.TP
+.B \-\-init-glfw-project
+Like
+.BR \-\-init-project ,
+but scaffolds a small GLFW + OpenGL program (\fBmain.cx\fR and \fBButton.cx\fR)
+with a
+.B build.sh
+that links
+.B glfw3
+and
+.B gl
+via
+.BR pkg-config .
+Requires the GLFW3 and OpenGL development packages.
+.SH EXAMPLES
+.TP
+Transpile a project using the installed standard library:
+.B clax --include=/usr/local/share/clax/system ./project
+.TP
+Lint without writing output:
+.B clax --lint ./project
+.TP
+Scaffold a fresh project:
+.B clax --init-project ~/myapp
+.TP
+Scaffold an SDL2 or GLFW starter project:
+.B clax --init-sdl2-project ~/mygame
+.br
+.B clax --init-glfw-project ~/mygl
+.SH FILES
+.TP
+.IR DATADIR /clax/system/*.cx
+Bundled Clax standard library (String, DynamicArray, HashTable, ...).
+.SH SEE ALSO
+The full language specification is installed under
+.IR DOCDIR /clax/Clax-Specification-V2.md .
+.SH AUTHOR
+Damir Šijaković.

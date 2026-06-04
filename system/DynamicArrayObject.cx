@@ -1,0 +1,67 @@
+// DynamicArrayObject.cx — dynamic array of Clax objects (any class).
+//
+// The array owns its contents: push hands ownership to the array, the dtor
+// deletes every stored object via the runtime-dispatched `delete`. Pulling an
+// element out with `take(i)` transfers ownership back to the caller.
+//
+// `void**` is used for storage so the underlying buffer is a plain C array
+// of opaque Object pointers.
+#include <stdlib.h>
+
+class DynamicArrayObject {
+    void** data;
+    int    size;
+    int    capacity;
+
+    DynamicArrayObject(int initialCapacity) {
+        this::capacity = initialCapacity;
+        this::size = 0;
+        this::data = malloc(sizeof(void*) * initialCapacity);
+        for (int i = 0; i < initialCapacity; i++) this::data[i] = NULL;
+    }
+
+    ~DynamicArrayObject() {
+        for (int i = 0; i < this::size; i++) {
+            delete this::data[i];   // generic dispatch via header type tag
+        }
+        free(this::data);
+    }
+
+    // Take ownership of `o` and append. Caller must NOT delete `o` afterwards.
+    void push(Object o) {
+        if (this::size == this::capacity) {
+            this::capacity *= 2;
+            this::data = realloc(this::data, sizeof(void*) * this::capacity);
+        }
+        this::data[this::size] = o;
+        this::size += 1;
+    }
+
+    // Borrowed reference (do NOT delete). Returns NULL on out-of-range.
+    Object get(int index) {
+        if (index < 0 || index >= this::size) return NULL;
+        return this::data[index];
+    }
+
+    // Remove and return the element at `index`. Caller owns it and must delete.
+    Object take(int index) {
+        if (index < 0 || index >= this::size) return NULL;
+        Object o = this::data[index];
+        for (int i = index; i < this::size - 1; i++) {
+            this::data[i] = this::data[i + 1];
+        }
+        this::size -= 1;
+        this::data[this::size] = NULL;
+        return o;
+    }
+
+    // Replace at `index`. The array deletes the previous element.
+    void set(int index, Object o) {
+        if (index < 0 || index >= this::size) return;
+        delete this::data[index];
+        this::data[index] = o;
+    }
+
+    int getSize()     { return this::size; }
+    int getCapacity() { return this::capacity; }
+};

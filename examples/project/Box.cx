@@ -1,0 +1,30 @@
+// Box.cx — V2 feature: a class containing a class-typed member.
+// `Point` is a reference (Point*); the container owns it and frees it in the dtor.
+#include "./Point.cx"
+
+class Box {
+    Point corner;          // class-typed member: NULL until assigned
+    int   tag;
+
+    Box(int tag) {
+        this::tag = tag;
+        // class-typed members start as NULL automatically; nothing to do here
+        // unless we want to own a Point.
+    }
+
+    ~Box() {
+        delete this::corner;   // safe even if NULL
+    }
+
+    void setCorner(Point p) {
+        // Box takes ownership of p.
+        delete this::corner;
+        this::corner = p;
+    }
+
+    Point getCorner() {
+        return this::corner;
+    }
+
+    int getTag() { return this::tag; }
+};

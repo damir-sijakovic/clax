@@ -1,0 +1,85 @@
+// DynamicArrayString.cx — dynamic array of C strings.
+// The array owns its contents: push copies the string in, the dtor frees them.
+#include <stdlib.h>
+#include <string.h>
+
+class DynamicArrayString {
+    char** data;
+    int    size;
+    int    capacity;
+
+    DynamicArrayString(int initialCapacity) {
+        this::capacity = initialCapacity;
+        this::size = 0;
+        this::data = malloc(sizeof(char*) * initialCapacity);
+    }
+
+    ~DynamicArrayString() {
+        for (int i = 0; i < this::size; i++) {
+            free(this::data[i]);
+        }
+        free(this::data);
+    }
+
+    // Returns a heap-allocated copy of `s`. Internal helper.
+    char* dup(char* s) {
+        int n = strlen(s);
+        char* p = malloc(n + 1);
+        memcpy(p, s, n + 1);
+        return p;
+    }
+
+    void push(char* value) {
+        if (this::size == this::capacity) {
+            this::capacity *= 2;
+            this::data = realloc(this::data, sizeof(char*) * this::capacity);
+        }
+        this::data[this::size] = this::dup(value);
+        this::size += 1;
+    }
+
+    // Returns a borrowed pointer (do NOT free). Valid until the array is
+    // mutated or destroyed.
+    char* get(int index) {
+        return this::data[index];
+    }
+
+    // Replace the element at `index`. Frees the previous string.
+    void set(int index, char* value) {
+        free(this::data[index]);
+        this::data[index] = this::dup(value);
+    }
+
+    // Linear search; returns the index of `value` or -1.
+    int indexOf(char* value) {
+        for (int i = 0; i < this::size; i++) {
+            if (strcmp(this::data[i], value) == 0) return i;
+        }
+        return -1;
+    }
+
+    // Concatenate all elements with `sep` between them into a new heap C-string.
+    // Caller must free() the result. The inverse of String::split.
+    char* join(char* sep) {
+        int sepLen = strlen(sep);
+        int total = 0;
+        for (int i = 0; i < this::size; i++) total += strlen(this::data[i]);
+        if (this::size > 1) total += sepLen * (this::size - 1);
+        char* out = malloc(total + 1);
+        int pos = 0;
+        for (int i = 0; i < this::size; i++) {
+            if (i > 0) {
+                memcpy(out + pos, sep, sepLen);
+                pos += sepLen;
+            }
+            int n = strlen(this::data[i]);
+            memcpy(out + pos, this::data[i], n);
+            pos += n;
+        }
+        out[pos] = '\0';
+        return out;
+    }
+
+    int getSize()     { return this::size; }
+    int getCapacity() { return this::capacity; }
+};

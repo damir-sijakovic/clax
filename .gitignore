@@ -1,0 +1,14 @@
+# configure output
+/config.mk
+
+# built transpiler
+/clax/clax
+/clax/clax_lint
+
+# transpiler / compiler output in example projects
+generated_c/
+**/program
+
+# misc build scratch
+conftest.*
+*.o

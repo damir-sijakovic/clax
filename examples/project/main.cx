@@ -1,0 +1,156 @@
+// main.cx — program file. Exercises both the ported v1 examples and the new
+// V2 features: classes-containing-classes (Box / Point), Object, typeof, clone.
+#include "./Point.cx"
+#include "./Box.cx"
+#include <DynamicArray.cx>
+#include <String.cx>
+#include <HashTable.cx>
+#include <DynamicArrayString.cx>
+#include <HashTableString.cx>
+#include <DynamicArrayObject.cx>
+#include <HashTableObject.cx>
+#include <stdio.h>
+
+// `Object` parameter — accepts any class. We narrow with `typeof`.
+void describe(Object o) {
+    if (o::typeof(Point)) {
+        printf("Point(%d, %d)\n", o::getX(), o::getY());
+    }
+    if (o::typeof(String)) {
+        printf("String: %s\n", o::cstr());
+    }
+}
+
+int main(void) {
+    // ---- v1-style usage --------------------------------------------------
+    DynamicArray arr = new DynamicArray(4);
+    arr::push(10);
+    arr::push(20);
+    arr::push(30);
+    for (int i = 0; i < arr::getSize(); i++) {
+        printf("%d\n", arr::get(i));
+    }
+
+    String s = new String("hello");
+    s::append(" world");
+    printf("%s (%d)\n", s::cstr(), s::size());
+
+    // ---- V2: methods that take/return objects ----------------------------
+    Point a = new Point(1, 2);
+    Point b = new Point(10, 20);
+    a::add(b);                        // pass a Point reference
+    printf("a = (%d, %d)\n", a::getX(), a::getY());   // (11, 22)
+
+    // ---- V2: clone --------------------------------------------------------
+    Point c = a::clone();             // deep, independent copy
+    c::add(b);
+    printf("a = (%d, %d), c = (%d, %d)\n",
+           a::getX(), a::getY(), c::getX(), c::getY());
+
+    // ---- V2: Object + typeof narrowing ------------------------------------
+    describe(a);
+    describe(s);
+
+    // ---- V2: class containing class --------------------------------------
+    Box box = new Box(42);
+    Point corner = new Point(7, 8);
+    box::setCorner(corner);            // box takes ownership of `corner`
+    Point got = box::getCorner();      // borrowed reference (do NOT delete `got`)
+    printf("box tag=%d, corner=(%d,%d)\n",
+           box::getTag(), got::getX(), got::getY());
+
+    // Deep-cloning Box also clones the contained Point.
+    Box boxCopy = box::clone();
+    Point cornerCopy = boxCopy::getCorner();
+    printf("clone corner=(%d,%d)\n", cornerCopy::getX(), cornerCopy::getY());
+
+    // ---- HashTable demo --------------------------------------------------
+    HashTable ht = new HashTable(16);
+    ht::put("apple", 1);
+    ht::put("banana", 2);
+    ht::put("cherry", 3);
+    ht::put("banana", 22);      // overwrite
+    printf("ht size=%d cap=%d\n", ht::getSize(), ht::getCapacity());
+    printf("apple=%d banana=%d cherry=%d\n",
+           ht::get("apple"), ht::get("banana"), ht::get("cherry"));
+    printf("has 'mango'? %s\n", ht::contains("mango") ? "yes" : "no");
+
+    // ---- DynamicArrayString demo -----------------------------------------
+    DynamicArrayString words = new DynamicArrayString(2);
+    words::push("alpha");
+    words::push("beta");
+    words::push("gamma");
+    words::push("delta");        // triggers resize past initial capacity
+    words::set(0, "ALPHA");
+    printf("words size=%d, idx('gamma')=%d\n",
+           words::getSize(), words::indexOf("gamma"));
+    for (int i = 0; i < words::getSize(); i++) {
+        printf("  [%d] %s\n", i, words::get(i));
+    }
+
+    // ---- HashTableString demo --------------------------------------------
+    HashTableString env = new HashTableString(16);
+    env::put("USER", "claude");
+    env::put("SHELL", "/bin/bash");
+    env::put("EDITOR", "vim");
+    env::put("EDITOR", "nano");        // overwrite
+    printf("env size=%d\n", env::getSize());
+    printf("USER=%s SHELL=%s EDITOR=%s\n",
+           env::get("USER"), env::get("SHELL"), env::get("EDITOR"));
+    env::remove("SHELL");
+    printf("after remove: has SHELL? %s, size=%d\n",
+           env::contains("SHELL") ? "yes" : "no", env::getSize());
+
+    // ---- DynamicArrayObject demo -----------------------------------------
+    // The array owns its elements: we hand it freshly-newed objects and let
+    // the dtor clean them up. Each element can be a different class.
+    DynamicArrayObject things = new DynamicArrayObject(2);
+    Point p1 = new Point(1, 1);
+    Point p2 = new Point(2, 2);
+    String hello = new String("hi");
+    things::push(p1);            // ownership -> things
+    things::push(p2);
+    things::push(hello);
+    printf("things size=%d\n", things::getSize());
+    for (int i = 0; i < things::getSize(); i++) {
+        Object o = things::get(i);    // borrowed
+        describe(o);                  // narrows with typeof
+    }
+    // (we do NOT delete p1, p2, hello — they belong to `things` now)
+
+    // ---- HashTableObject demo --------------------------------------------
+    // String-keyed map of heterogeneous objects.
+    HashTableObject reg = new HashTableObject(8);
+    Point origin = new Point(0, 0);
+    String greeting = new String("hello");
+    reg::put("origin", origin);
+    reg::put("greeting", greeting);
+    printf("reg size=%d, has 'origin'? %s\n",
+           reg::getSize(), reg::contains("origin") ? "yes" : "no");
+    {
+        Object o = reg::get("origin");
+        if (o::typeof(Point)) {
+            printf("origin = (%d, %d)\n", o::getX(), o::getY());
+        }
+    }
+    // Take ownership back from the table.
+    Object taken = reg::take("greeting");
+    if (taken::typeof(String)) {
+        printf("took greeting: %s\n", taken::cstr());
+    }
+    delete taken;   // caller now owns it
+
+    delete arr;
+    delete s;
+    delete a;
+    delete b;
+    delete c;
+    delete box;            // also deletes the Point it owns
+    delete boxCopy;        // also deletes its cloned Point
+    delete ht;
+    delete words;
+    delete env;
+    delete things;   // also deletes p1, p2, hello
+    delete reg;      // also deletes origin (greeting was taken out)
+    return 0;
+}

@@ -1,0 +1,76 @@
+// Button.cx — a tiny SDL2 GUI button.
+//
+// Hover / pressed state is updated by the event loop in main; on a click we
+// bump an internal counter. Rendering uses only SDL primitives (filled rect
+// + border) so this needs no SDL_ttf.
+#include <SDL2/SDL.h>
+#include <stdbool.h>
+
+class Button {
+    SDL_Rect rect;
+    int      clicks;
+    bool     pressed;
+    bool     hovered;
+
+    Button(int x, int y, int w, int h) {
+        this::rect.x = x;
+        this::rect.y = y;
+        this::rect.w = w;
+        this::rect.h = h;
+        this::clicks  = 0;
+        this::pressed = false;
+        this::hovered = false;
+    }
+
+    ~Button() { }
+
+    bool contains(int mx, int my) {
+        return mx >= this::rect.x
+            && my >= this::rect.y
+            && mx <  this::rect.x + this::rect.w
+            && my <  this::rect.y + this::rect.h;
+    }
+
+    void setHovered(bool h) { this::hovered = h; }
+    void setPressed(bool p) { this::pressed = p; }
+
+    void onClick() {
+        this::clicks += 1;
+        SDL_Log("button clicked! total = %d", this::clicks);
+    }
+
+    int getClicks() { return this::clicks; }
+
+    void draw(SDL_Renderer* r) {
+        // Pick fill color from state.
+        Uint8 cr, cg, cb;
+        if (this::pressed)      { cr =  60; cg = 110; cb = 200; }
+        else if (this::hovered) { cr = 100; cg = 170; cb = 240; }
+        else                    { cr =  70; cg =  90; cb = 110; }
+
+        SDL_SetRenderDrawColor(r, cr, cg, cb, 255);
+        SDL_RenderFillRect(r, &this::rect);
+
+        // Border.
+        SDL_SetRenderDrawColor(r, 230, 230, 230, 255);
+        SDL_RenderDrawRect(r, &this::rect);
+
+        // A row of small white squares = click count (a poor-man's label).
+        int n = this::clicks;
+        if (n > 12) n = 12;
+        int sq = 10;
+        int gap = 4;
+        int total = n * sq + (n - 1) * gap;
+        int sx = this::rect.x + (this::rect.w - total) / 2;
+        int sy = this::rect.y + (this::rect.h - sq) / 2;
+        SDL_SetRenderDrawColor(r, 240, 240, 240, 255);
+        for (int i = 0; i < n; i++) {
+            SDL_Rect s;
+            s.x = sx + i * (sq + gap);
+            s.y = sy;
+            s.w = sq;
+            s.h = sq;
+            SDL_RenderFillRect(r, &s);
+        }
+    }
+};

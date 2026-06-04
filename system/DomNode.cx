@@ -1,0 +1,146 @@
+// DomNode.cx — HTML DOM tree node.
+//
+// A DomNode represents one node in an HTML document tree. It holds an
+// optional tag name (e.g. "div"), an optional text content (for text
+// nodes), a string->string attribute map, and an ordered list of child
+// nodes. A node with a non-NULL textContent and NULL tagName is a text
+// node; otherwise it is an element node.
+//
+// The node owns its tagName/textContent strings (copied in), its
+// attributes table, and its children array. addChild transfers
+// ownership of the child node to this node; deleting this node
+// recursively deletes the subtree.
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <HashTableString.cx>
+#include <DynamicArrayObject.cx>
+
+class DomNode {
+    char*              tagName;
+    char*              textContent;
+    HashTableString    attributes;
+    DynamicArrayObject children;
+
+    DomNode(char* tag) {
+        this::tagName = NULL;
+        this::textContent = NULL;
+        if (tag != NULL) {
+            int n = strlen(tag);
+            this::tagName = malloc(n + 1);
+            memcpy(this::tagName, tag, n + 1);
+        }
+        this::attributes = new HashTableString(16);
+        this::children   = new DynamicArrayObject(4);
+    }
+
+    ~DomNode() {
+        free(this::tagName);
+        free(this::textContent);
+        delete this::attributes;
+        delete this::children;
+    }
+
+    char* getTagName() { return this::tagName; }
+
+    bool isTextNode() {
+        return this::tagName == NULL && this::textContent != NULL;
+    }
+
+    void setText(char* text) {
+        free(this::textContent);
+        this::textContent = NULL;
+        if (text != NULL) {
+            int n = strlen(text);
+            this::textContent = malloc(n + 1);
+            memcpy(this::textContent, text, n + 1);
+        }
+    }
+
+    char* getText() { return this::textContent; }
+
+    void setAttribute(char* name, char* value) {
+        this::attributes::put(name, value);
+    }
+
+    // Borrowed pointer (do NOT free). NULL if absent.
+    char* getAttribute(char* name) {
+        return this::attributes::get(name);
+    }
+
+    bool hasAttribute(char* name) {
+        return this::attributes::contains(name);
+    }
+
+    void removeAttribute(char* name) {
+        this::attributes::remove(name);
+    }
+
+    // Takes ownership of `child`. Caller must NOT delete it afterwards.
+    void addChild(DomNode child) {
+        this::children::push(child);
+    }
+
+    // Borrowed reference (do NOT delete). NULL if out of range.
+    DomNode getChild(int index) {
+        Object o = this::children::get(index);
+        if (o::typeof(DomNode)) {
+            return o;
+        }
+        return NULL;
+    }
+
+    int childCount() {
+        return this::children::getSize();
+    }
+};
+
+
+
+/*
+
+// main.cx
+#include <DomNode.cx>
+#include <stdio.h>
+
+int main(void) {
+    // <div id="main" class="container">
+    DomNode root = new DomNode("div");
+    root::setAttribute("id", "main");
+    root::setAttribute("class", "container");
+
+    // <h1>Hello</h1>
+    DomNode h1 = new DomNode("h1");
+    DomNode h1Text = new DomNode(NULL);
+    h1Text::setText("Hello");
+    h1::addChild(h1Text);       // h1 now owns h1Text
+    root::addChild(h1);         // root now owns h1 (and h1Text transitively)
+
+    // <p>World</p>
+    DomNode p = new DomNode("p");
+    DomNode pText = new DomNode(NULL);
+    pText::setText("World");
+    p::addChild(pText);
+    root::addChild(p);
+
+    // --- read it back ---
+    printf("root tag: %s\n",      root::getTagName());      // div
+    printf("root id:  %s\n",      root::getAttribute("id")); // main
+    printf("children: %d\n",      root::childCount());      // 2
+
+    DomNode first = root::getChild(0);                       // borrowed
+    printf("first child tag: %s\n", first::getTagName());    // h1
+
+    DomNode firstText = first::getChild(0);                  // borrowed
+    if (firstText::isTextNode()) {
+        printf("first text: %s\n", firstText::getText());    // Hello
+    }
+
+    // --- tear down the whole tree in one delete ---
+    delete root;   // recursively deletes h1, h1Text, p, pText
+    return 0;
+}
+
+
+
+*/

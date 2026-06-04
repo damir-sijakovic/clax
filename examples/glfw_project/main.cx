@@ -1,0 +1,72 @@
+// main.cx — tiny GLFW program with one clickable Button.
+//
+// Uses legacy OpenGL with an orthographic 2D projection matching the window
+// size. The cursor's Y coordinate from GLFW is window-top-down, so the ortho
+// projection is set with top=0 / bottom=h to match.
+#include "./Button.cx"
+#include <GLFW/glfw3.h>
+#include <stdbool.h>
+#include <stdio.h>
+
+int main(void) {
+    if (!glfwInit()) {
+        fprintf(stderr, "glfwInit failed\n");
+        return 1;
+    }
+    GLFWwindow* win = glfwCreateWindow(480, 320, "clax + glfw", NULL, NULL);
+    if (!win) {
+        fprintf(stderr, "glfwCreateWindow failed\n");
+        glfwTerminate();
+        return 1;
+    }
+    glfwMakeContextCurrent(win);
+    glfwSwapInterval(1);
+
+    Button btn = new Button(140, 120, 200, 80);
+
+    int prev_mb = GLFW_RELEASE;
+    while (!glfwWindowShouldClose(win)) {
+        glfwPollEvents();
+        if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetWindowShouldClose(win, 1);
+        }
+
+        double mx, my;
+        glfwGetCursorPos(win, &mx, &my);
+        btn::setHovered(btn::contains(mx, my));
+
+        int cur_mb = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT);
+        if (cur_mb == GLFW_PRESS && prev_mb == GLFW_RELEASE) {
+            if (btn::contains(mx, my)) btn::setPressed(true);
+        } else if (cur_mb == GLFW_RELEASE && prev_mb == GLFW_PRESS) {
+            bool was_in = btn::contains(mx, my);
+            btn::setPressed(false);
+            if (was_in) btn::onClick();
+        }
+        prev_mb = cur_mb;
+
+        int fw, fh, ww, wh;
+        glfwGetFramebufferSize(win, &fw, &fh);
+        glfwGetWindowSize(win, &ww, &wh);
+
+        glViewport(0, 0, fw, fh);
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        // top=0, bottom=wh so y matches GLFW cursor coords (top-down).
+        glOrtho(0.0, (double)ww, (double)wh, 0.0, -1.0, 1.0);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+
+        glClearColor(0.12f, 0.12f, 0.14f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        btn::draw();
+
+        glfwSwapBuffers(win);
+    }
+
+    delete btn;
+    glfwDestroyWindow(win);
+    glfwTerminate();
+    return 0;
+}

@@ -1,0 +1,124 @@
+// HashSetString.cx — a set of strings.
+// Open addressing with linear probing; auto-resizes at ~0.7 load factor. The
+// set owns its members: add copies the string in, the dtor frees them.
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <DynamicArrayString.cx>
+
+class HashSetString {
+    char** keys;        // bucket array; NULL means empty
+    int    capacity;
+    int    size;
+
+    HashSetString(int initialCapacity) {
+        this::capacity = initialCapacity;
+        this::size = 0;
+        this::keys = calloc(initialCapacity, sizeof(char*));
+    }
+
+    ~HashSetString() {
+        for (int i = 0; i < this::capacity; i++) {
+            free(this::keys[i]);
+        }
+        free(this::keys);
+    }
+
+    char* dup(char* s) {
+        int n = strlen(s);
+        char* p = malloc(n + 1);
+        memcpy(p, s, n + 1);
+        return p;
+    }
+
+    // FNV-1a 32-bit, folded to capacity.
+    int hashOf(char* key) {
+        unsigned int h = 2166136261u;
+        for (int i = 0; key[i] != '\0'; i++) {
+            h ^= (unsigned char)key[i];
+            h *= 16777619u;
+        }
+        return (int)(h % (unsigned int)this::capacity);
+    }
+
+    int probe(char* key) {
+        int start = this::hashOf(key);
+        for (int i = 0; i < this::capacity; i++) {
+            int s = (start + i) % this::capacity;
+            if (this::keys[s] == NULL) return s;
+            if (strcmp(this::keys[s], key) == 0) return s;
+        }
+        return -1;
+    }
+
+    // Double the table and reinsert every member. Member strings are moved,
+    // not re-copied.
+    void grow() {
+        int    oldCap  = this::capacity;
+        char** oldKeys = this::keys;
+        int newCap = oldCap * 2;
+        if (newCap < 4) newCap = 4;
+        this::capacity = newCap;
+        this::size = 0;
+        this::keys = calloc(newCap, sizeof(char*));
+        for (int i = 0; i < oldCap; i++) {
+            if (oldKeys[i] != NULL) {
+                int s = this::probe(oldKeys[i]);
+                this::keys[s] = oldKeys[i];
+                this::size += 1;
+            }
+        }
+        free(oldKeys);
+    }
+
+    // Add `value`. Returns true if newly inserted, false if already present.
+    bool add(char* value) {
+        if ((this::size + 1) * 10 >= this::capacity * 7) {
+            this::grow();
+        }
+        int s = this::probe(value);
+        if (s < 0) return false;
+        if (this::keys[s] != NULL) return false;   // already a member
+        this::keys[s] = this::dup(value);
+        this::size += 1;
+        return true;
+    }
+
+    bool contains(char* value) {
+        int s = this::probe(value);
+        if (s < 0) return false;
+        return this::keys[s] != NULL;
+    }
+
+    // Remove `value` if present. Returns true if it was removed.
+    bool remove(char* value) {
+        int s = this::probe(value);
+        if (s < 0 || this::keys[s] == NULL) return false;
+        free(this::keys[s]); this::keys[s] = NULL;
+        this::size -= 1;
+        // Reinsert any contiguous run that follows so probes still find them.
+        int i = (s + 1) % this::capacity;
+        while (this::keys[i] != NULL) {
+            char* k = this::keys[i];
+            this::keys[i] = NULL;
+            this::size -= 1;
+            int t = this::probe(k);
+            this::keys[t] = k;
+            this::size += 1;
+            i = (i + 1) % this::capacity;
+        }
+        return true;
+    }
+
+    // All members, in unspecified order, as a new array the caller owns (delete).
+    DynamicArrayString getKeys() {
+        DynamicArrayString out = new DynamicArrayString(this::size + 1);
+        for (int i = 0; i < this::capacity; i++) {
+            if (this::keys[i] != NULL) out::push(this::keys[i]);
+        }
+        return out;
+    }
+
+    int getSize()     { return this::size; }
+    int getCapacity() { return this::capacity; }
+};

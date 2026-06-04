@@ -1,0 +1,116 @@
+// HashTable.cx — string-keyed -> int value hash table.
+// Open addressing with linear probing; auto-resizes when the load factor
+// passes ~0.7, so inserts never silently drop.
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <DynamicArrayString.cx>
+
+class HashTable {
+    char** keys;        // bucket array; NULL means empty
+    int*   values;      // parallel value array
+    int    capacity;
+    int    size;
+
+    HashTable(int initialCapacity) {
+        this::capacity = initialCapacity;
+        this::size = 0;
+        this::keys   = calloc(initialCapacity, sizeof(char*));
+        this::values = calloc(initialCapacity, sizeof(int));
+    }
+
+    ~HashTable() {
+        for (int i = 0; i < this::capacity; i++) {
+            free(this::keys[i]);
+        }
+        free(this::keys);
+        free(this::values);
+    }
+
+    // FNV-1a 32-bit, folded to capacity.
+    int hashOf(char* key) {
+        unsigned int h = 2166136261u;
+        for (int i = 0; key[i] != '\0'; i++) {
+            h ^= (unsigned char)key[i];
+            h *= 16777619u;
+        }
+        return (int)(h % (unsigned int)this::capacity);
+    }
+
+    // Returns the slot where `key` either is stored or would be inserted.
+    // Returns -1 if the table is full and `key` is not present.
+    int probe(char* key) {
+        int start = this::hashOf(key);
+        for (int i = 0; i < this::capacity; i++) {
+            int s = (start + i) % this::capacity;
+            if (this::keys[s] == NULL) return s;
+            if (strcmp(this::keys[s], key) == 0) return s;
+        }
+        return -1;
+    }
+
+    // Double the table and reinsert every entry. Existing key strings are
+    // moved, not re-copied.
+    void grow() {
+        int    oldCap  = this::capacity;
+        char** oldKeys = this::keys;
+        int*   oldVals = this::values;
+        int newCap = oldCap * 2;
+        if (newCap < 4) newCap = 4;
+        this::capacity = newCap;
+        this::size = 0;
+        this::keys   = calloc(newCap, sizeof(char*));
+        this::values = calloc(newCap, sizeof(int));
+        for (int i = 0; i < oldCap; i++) {
+            if (oldKeys[i] != NULL) {
+                int s = this::probe(oldKeys[i]);
+                this::keys[s]   = oldKeys[i];
+                this::values[s] = oldVals[i];
+                this::size += 1;
+            }
+        }
+        free(oldKeys);
+        free(oldVals);
+    }
+
+    void put(char* key, int value) {
+        if ((this::size + 1) * 10 >= this::capacity * 7) {
+            this::grow();
+        }
+        int s = this::probe(key);
+        if (s < 0) return;            // unreachable after resize; kept defensive
+        if (this::keys[s] == NULL) {
+            this::keys[s] = malloc(strlen(key) + 1);
+            strcpy(this::keys[s], key);
+            this::size += 1;
+        }
+        this::values[s] = value;
+    }
+
+    bool contains(char* key) {
+        int s = this::probe(key);
+        if (s < 0) return false;
+        return this::keys[s] != NULL;
+    }
+
+    // Returns the value for `key`, or 0 if absent. Use `contains` first if you
+    // need to distinguish a missing key from a stored 0.
+    int get(char* key) {
+        int s = this::probe(key);
+        if (s < 0 || this::keys[s] == NULL) return 0;
+        return this::values[s];
+    }
+
+    // All keys, in unspecified order, as a new array the caller owns (delete).
+    // Iterate values with get(key).
+    DynamicArrayString getKeys() {
+        DynamicArrayString out = new DynamicArrayString(this::size + 1);
+        for (int i = 0; i < this::capacity; i++) {
+            if (this::keys[i] != NULL) out::push(this::keys[i]);
+        }
+        return out;
+    }
+
+    int getSize()     { return this::size; }
+    int getCapacity() { return this::capacity; }
+};

@@ -1,0 +1,86 @@
+// File.cx — minimal text file I/O helper.
+//
+// A File wraps a filesystem path. The read methods pull the whole file into
+// memory and hand back a newly-allocated object the caller owns (delete it);
+// a NULL return means the file could not be opened. The write methods return
+// true on success. Intended for text: readAll uses the file's byte length but
+// String is strlen-based, so embedded NUL bytes are not represented.
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <String.cx>
+#include <DynamicArrayString.cx>
+
+class File {
+    char* path;
+
+    File(char* path) {
+        int n = strlen(path);
+        this::path = malloc(n + 1);
+        memcpy(this::path, path, n + 1);
+    }
+
+    ~File() {
+        free(this::path);
+    }
+
+    // Borrowed pointer (do NOT free).
+    char* getPath() {
+        return this::path;
+    }
+
+    bool exists() {
+        FILE* f = fopen(this::path, "rb");
+        if (f == NULL) return false;
+        fclose(f);
+        return true;
+    }
+
+    // Whole file as a new String. Caller owns it. NULL if it can't be opened.
+    String readAll() {
+        FILE* f = fopen(this::path, "rb");
+        if (f == NULL) return NULL;
+        fseek(f, 0, SEEK_END);
+        long n = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (n < 0) { fclose(f); return NULL; }
+        char* buf = malloc(n + 1);
+        size_t r = fread(buf, 1, n, f);
+        buf[r] = '\0';
+        fclose(f);
+        String s = new String(buf);
+        free(buf);
+        return s;
+    }
+
+    // File split into lines on '\n'. A trailing newline yields a final empty
+    // entry. Caller owns the array (delete). NULL if the file can't be opened.
+    DynamicArrayString readLines() {
+        String content = this::readAll();
+        if (content == NULL) return NULL;
+        DynamicArrayString lines = content::split('\n');
+        delete content;
+        return lines;
+    }
+
+    // Overwrite the file with `content` (creating it if absent). True on success.
+    bool writeAll(char* content) {
+        FILE* f = fopen(this::path, "wb");
+        if (f == NULL) return false;
+        int n = strlen(content);
+        size_t w = fwrite(content, 1, n, f);
+        fclose(f);
+        return w == (size_t)n;
+    }
+
+    // Append `content` to the file (creating it if absent). True on success.
+    bool appendText(char* content) {
+        FILE* f = fopen(this::path, "ab");
+        if (f == NULL) return false;
+        int n = strlen(content);
+        size_t w = fwrite(content, 1, n, f);
+        fclose(f);
+        return w == (size_t)n;
+    }
+};
