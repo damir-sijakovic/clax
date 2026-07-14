@@ -5,8 +5,8 @@
 `clax` transpiles **Clax** (`.cx`) — a small C-with-classes language — to plain
 C. It implements the object model described in
 [Clax-Specification-V2.md](Clax-Specification-V2.md): `::`, `new`/`delete`,
-`this`, `Object`, `typeof`, `clone`, NULL safety, and a generated shared
-runtime. A bundled standard library (`system/*.cx`) provides `String`,
+`this`, `Object`, `typeof`, `clone`, `callable` (methods as callbacks), NULL
+safety, and a generated shared runtime. A bundled standard library (`system/*.cx`) provides `String`,
 `DynamicArray*`, `HashTable*`, and friends.
 
 ## Build & install

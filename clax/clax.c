@@ -10,8 +10,9 @@
  * by the whole project.
  *
  * Implements Clax-Specification-V2.md: ::, new/delete, this, Object, typeof, clone,
- * NULL safety, hidden header (magic + type tag), generic dispatch of clone/delete
- * on Object, deep clone of class-typed members.
+ * callable (methods as callbacks, via generated __cb trampolines), NULL safety,
+ * hidden header (magic + type tag), generic dispatch of clone/delete on Object,
+ * deep clone of class-typed members.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -366,6 +367,36 @@ static void walk(Toks* ts, int start, int end, SB* out, Scope** sc_io, const cha
             continue;
         }
 
+        /* `callable(recv::method)` -> `&Class__method__cb`, the address of the
+         * auto-generated trampoline that adapts a method to a plain C function
+         * pointer (the __cb thunks emitted in parse_class_body). `recv` may be
+         * `this`, a class-typed variable, or a class name. */
+        if (teq(tk, "callable")) {
+            int p = nxt(ts, i + 1);
+            if (p >= end || !teq(&ts->v[p], "(")) die("callable: expected '(' after 'callable'");
+            int close = find_matching(ts, p, end, "(", ")");
+            if (close >= end) die("callable: unterminated '('");
+            int a = nxt(ts, p + 1);
+            if (a >= close || ts->v[a].t != T_ID) die("callable: expected 'recv::method' inside callable(...)");
+            int cc = nxt(ts, a + 1);
+            if (cc >= close || !teq(&ts->v[cc], "::")) die("callable: expected '::' in 'recv::method'");
+            int mm = nxt(ts, cc + 1);
+            if (mm >= close || ts->v[mm].t != T_ID) die("callable: expected method name after '::'");
+            int extra = nxt(ts, mm + 1);
+            if (extra < close) die("callable: expected only 'recv::method' inside callable(...)");
+            const char* recv = ts->v[a].s;
+            const char* method = ts->v[mm].s;
+            const char* rc = NULL;
+            if (strcmp(recv, "this") == 0)     rc = cur_class;             /* this::method   */
+            else if (sl_has(&g_classes, recv)) rc = recv;                 /* Class::method  */
+            else                               rc = scope_lookup(*sc_io, recv); /* var::method */
+            if (!rc || strcmp(rc, "Object") == 0)
+                die("callable: '%s' is not a known class or class-typed variable", recv);
+            sb_printf(out, "&%s__%s__cb", rc, method);
+            i = close;
+            continue;
+        }
+
         /* `delete EXPR;` — if EXPR is a bare identifier whose class is statically
          * known, emit inline destructor + free. Otherwise emit `clax_delete(EXPR)`
          * which dispatches at runtime via the object header.
@@ -681,6 +712,16 @@ static void ci_add_member(ClassInfo* ci, const char* name, const char* type) {
     ci->nmem++;
 }
 
+/* True if the (translated) return-type string is exactly `void` — used to decide
+ * whether a __cb trampoline forwards the method's return value. */
+static bool type_is_void(const char* s) {
+    while (isspace((unsigned char)*s)) s++;
+    if (strncmp(s, "void", 4) != 0) return false;
+    const char* p = s + 4;
+    while (isspace((unsigned char)*p)) p++;
+    return *p == '\0';   /* exactly "void", not "void*" */
+}
+
 /* Parse class body. Emits struct typedef + closing into hdr, function protos
  * after the typedef, and function bodies into src. */
 static void parse_class_body(Toks* ts, int body_start, int body_end, const char* cname, SB* hdr, SB* src) {
@@ -827,6 +868,27 @@ static void parse_class_body(Toks* ts, int body_start, int body_end, const char*
             walk(ts, popen + 1, pclose, &params, &tmp, cname);
             /* tmp == fn_scope (no { } inside params normally) */
             (void)tmp;
+
+            /* Scan param tokens for names (in order) and whether one is named
+             * `object`. A method with an `object` param is "callback-shaped": we
+             * emit a __cb trampoline (below) so it can be passed via callable(),
+             * recovering the receiver from that `object` slot. */
+            SB argnames; sb_init(&argnames);
+            bool has_object_param = false;
+            {
+                int an = 0;
+                for (int j = popen + 1; j < pclose; j++) {
+                    if (ts->v[j].t != T_ID) continue;
+                    int k = nxt(ts, j + 1);
+                    bool is_name = (k < pclose) ? teq(&ts->v[k], ",") : (k == pclose);
+                    if (is_name) {
+                        if (an++) sb_puts(&argnames, ", ");
+                        sb_puts(&argnames, ts->v[j].s);
+                        if (strcmp(ts->v[j].s, "object") == 0) has_object_param = true;
+                    }
+                }
+            }
+
             /* Header proto: `RT Class__method(Class* this, params);` — buffered
              * in `protos` and flushed AFTER the struct typedef ends. */
             if (is_ctor) {
@@ -862,6 +924,25 @@ static void parse_class_body(Toks* ts, int body_start, int body_end, const char*
             /* Body content: tokens between bopen+1 and bclose */
             walk(ts, bopen + 1, bclose, src, &fn_scope, cname);
             sb_puts(src, "\n}\n");
+
+            /* Callback trampoline for callback-shaped methods:
+             *   RT Class__method__cb(<params>) {
+             *       [return] Class__method((Class*)object, <arg names>);
+             *   }
+             * The receiver is recovered from the `object` parameter — the same slot
+             * the event machinery already carries the bound instance in. Not static:
+             * callable() may reference it from another file, so it is prototyped in
+             * the class header alongside the method. */
+            if (!is_ctor && has_object_param) {
+                sb_printf(&protos, "%s %s__%s__cb(%s);\n", rt.s, cname, fname, params.s);
+                sb_printf(src, "%s %s__%s__cb(%s) {\n", rt.s, cname, fname, params.s);
+                if (type_is_void(rt.s))
+                    sb_printf(src, "    %s__%s((%s*)object, %s);\n", cname, fname, cname, argnames.s);
+                else
+                    sb_printf(src, "    return %s__%s((%s*)object, %s);\n", cname, fname, cname, argnames.s);
+                sb_puts(src, "}\n");
+            }
+            sb_free(&argnames);
 
             sb_free(&rt);
             sb_free(&params);

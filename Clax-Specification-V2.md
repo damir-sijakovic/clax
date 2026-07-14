@@ -171,6 +171,48 @@ A class-typed member is a reference (pointer); see Section 6 for its lifecycle.
 - May return C types **or** class types or `Object` (new in V2). A returned
   object is owned by the caller (principle 6).
 
+### 3.5 Methods as callbacks — `callable()`
+
+A method cannot be passed directly as a C function pointer: the transpiler
+injects `ClassName* this` as its first parameter (Section 13.4), so its signature
+never matches a plain callback type such as `void (*)(App*, void*, void*)`.
+
+`callable(recv::method)` bridges the gap. It evaluates to the **address of a
+trampoline** the transpiler generates for `method` — an ordinary C function, with
+no `this`, that can be stored and invoked as a plain function pointer:
+
+```
+button_cb::set_callback(SDL_MOUSEBUTTONDOWN, callable(this::on_click));
+```
+
+`recv` may be `this`, a class-typed variable, or a class name
+(`callable(Button::on_click)`).
+
+**The receiver travels through an `object` parameter.** A trampoline is emitted
+only for a method that declares a parameter named `object`. The trampoline has
+that method's parameter list (without the injected `this`); it casts `object` to
+the class and calls the method with it as `this`, so the body uses `this::`
+normally:
+
+```
+// Clax — a genuine method; this::rect needs no cast
+void on_click(App app, void *object, void *data) {
+    SDL_Rect r = this::rect;
+    ...
+}
+
+// Generated: the method, plus its trampoline (Section 13.4)
+void Button__on_click(Button* this, App* app, void* object, void* data) { ... }
+void Button__on_click__cb(App* app, void* object, void* data) {
+    Button__on_click((Button*)object, app, object, data);
+}
+```
+
+The caller must arrange for the bound instance to arrive in the `object` slot;
+an event system typically stores the object when the handler is registered and
+passes it back on dispatch. A method with no `object` parameter gets no
+trampoline, and `callable()` on it fails to compile.
+
 ---
 
 ## 4. The `::` Operator
@@ -181,6 +223,8 @@ the marker the transpiler uses to recognize class operations.
 - `this::member` — a member of the current object, inside a method.
 - `obj::member` — a member of an object.
 - `obj::method(args)` — a method call on an object.
+- `callable(obj::method)` — the *address* of a method as a plain C function
+  pointer, for use as a callback (Section 3.5).
 
 `.` and `->` are never used on Clax objects; they remain available for ordinary
 C use (C structs, pointers). `::` accesses exactly one member; anything after it
@@ -525,6 +569,7 @@ know the static type of at the call site).
 | `obj::method(a)` | `C__method(obj, a)` |
 | `obj::typeof(T)` | header magic check + `obj->__type == CLAX_TYPE_T` |
 | `obj::clone()` | `C__clone(obj)` |
+| `callable(obj::method)` | `&C__method__cb` (address of the generated trampoline) |
 | `C obj = new C(a);` | `C* obj = malloc(sizeof(C)); C__ctor(obj, a);` |
 | `delete obj;` (statically-typed `C`) | `do { if (obj) { C__dtor(obj); free(obj); } } while (0);` |
 | `delete EXPR;` (other forms, incl. `Object`, member expr) | `clax_delete(EXPR);` |
@@ -539,6 +584,12 @@ know the static type of at the call site).
 Class functions are `ClassName__memberName`. Constructor: `ClassName__ctor`.
 Destructor: `ClassName__dtor`. Built-in: `ClassName__clone`. Every method takes
 `ClassName* this` first.
+
+A method that declares an `object` parameter also gets a callback trampoline
+`ClassName__memberName__cb` (Section 3.5): same parameter list as the method but
+**without** the `this`, forwarding to the method with `(ClassName*)object` as the
+receiver. It is a non-`static` function, prototyped in the class header so
+`callable()` can reference it from any file.
 
 ### 13.5 Symbol tracking
 
@@ -711,6 +762,8 @@ int main(void) {
 - Object parameters are written as `C other` (a reference), not `C* other`.
 - Added the `Object` type for accepting any class (Section 8).
 - Added built-in `typeof` (Section 9) and `clone` (Section 10).
+- Added `callable()` for passing a method as a C function-pointer callback,
+  via a generated trampoline (Section 3.5).
 - Objects may be `NULL` (Section 11).
 - Every object now carries a hidden header (magic + type tag; Section 7).
 - The transpiler emits a shared `clax_runtime.h` and `clax_runtime.c`. The
